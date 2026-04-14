@@ -1,3 +1,4 @@
+# %%
 import csv
 import json
 import os
@@ -9,18 +10,19 @@ from zoneinfo import ZoneInfo
 from html_parser import extract_analytics, extract_time, extract_tweet_text
 from playwright.sync_api import TimeoutError, sync_playwright
 
+# %%
 PREFERRED_TIME_ZONE = ZoneInfo("America/Chicago")
 
 ###### EARLIER DATE
 START_DATE = datetime(2026, 2, 7, tzinfo=PREFERRED_TIME_ZONE)
+start_date_text = START_DATE.strftime("%Y-%m-%d")
 
 ###### LATER DATE
 END_DATE = datetime(2026, 3, 8, tzinfo=PREFERRED_TIME_ZONE)
-
-start_date_text = START_DATE.strftime("%Y-%m-%d")
 end_date_text = END_DATE.strftime("%Y-%m-%d")
 
 
+# %%
 def main(p):
     browser, context, page = open_page(p)
 
@@ -48,13 +50,13 @@ def main(p):
 
 
 def random_short_wait(min_seconds: int = 1, max_seconds: int = 2):
-    """sleep a random short interval to mimic human behavior"""
+    """sleep a random short interval"""
     time.sleep(random.randint(min_seconds, max_seconds))
 
 
 def txt_to_list():
     """read queries from file (one per non-empty line)"""
-    file_path = "../../references/queries.txt"
+    file_path = "../ref/queries.txt"
 
     if not os.path.isfile(file_path):
         raise FileNotFoundError(f"Queries file not found at: {file_path}")
@@ -68,35 +70,17 @@ def txt_to_list():
     return queries
 
 
-def open_page(p, state_path: str = "twitter_state.json"):
-    browser = p.chromium.launch(
-        headless=False, args=["--disable-blink-features=AutomationControlled"]
-    )
+def open_page(p):
+    browser = p.chromium.launch(headless=False)
 
-    context_args = dict(
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-        ),
-        viewport={"width": 1366, "height": 768},
-    )
-
-    if os.path.exists(state_path):
-        context = browser.new_context(storage_state=state_path, **context_args)
-        page = context.new_page()
-        page.goto("https://x.com")
-    else:
-        context = browser.new_context(**context_args)
-        page = context.new_page()
-        page.goto("https://x.com")
-        input(
-            "Log in manually in the opened browser, then press ENTER here to save the session..."
-        )
-        context.storage_state(path=state_path)
+    context = browser.new_context()
+    page = context.new_page()
+    page.goto("nitter.net")
 
     return browser, context, page
 
 
+# what??
 def search(page, query):
     random_short_wait()
     try:
@@ -292,36 +276,6 @@ def write_single_tweet_to_csv(tweet_data, query, file_name):
         writer.writerow(
             [cleaned_tweet_text, tweet_analytics_json, formatted_date, query]
         )
-
-
-# Optional legacy writer (kept for compatibility)
-def tweets_to_csv(tweet_list, query, file_name):
-    folder_path = "../../data/raw"
-    file_path = os.path.join(folder_path, file_name)
-
-    os.makedirs(folder_path, exist_ok=True)
-    file_has_content = os.path.isfile(file_path) and os.path.getsize(file_path) > 0
-
-    with open(file_path, mode="a", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        if not file_has_content:
-            writer.writerow(["tweet_text", "tweet_analytics", "date", "query"])
-
-        for tweet_text, tweet_analytics, tweet_datetime in tweet_list:
-            cleaned_tweet_text = (
-                tweet_text.replace("\r", " ").replace("\n", " ").strip()
-            )
-            try:
-                tweet_analytics_json = json.dumps(tweet_analytics, ensure_ascii=False)
-            except Exception:
-                tweet_analytics_json = str(tweet_analytics)
-            try:
-                formatted_date = tweet_datetime.strftime("%Y-%m-%d %H:%M:%S %z")
-            except Exception:
-                formatted_date = str(tweet_datetime)
-            writer.writerow(
-                [cleaned_tweet_text, tweet_analytics_json, formatted_date, query]
-            )
 
 
 if __name__ == "__main__":
