@@ -75,7 +75,7 @@ def open_page(p):
 
     context = browser.new_context()
     page = context.new_page()
-    page.goto("nitter.net")
+    page.goto("http://localhost:8080/")
 
     return browser, context, page
 
