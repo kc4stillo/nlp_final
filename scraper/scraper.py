@@ -1,24 +1,23 @@
 # %%
 import csv
-import json
 import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from playwright.sync_api import sync_playwright
-from utilities import random_long_wait, random_short_wait
+from utilities import random_long_wait
 
 # %%
 PREFERRED_TIME_ZONE = ZoneInfo("America/Chicago")
 
 ###### LESS RECENT DATE
-START_DATE = datetime(2026, 2, 8, tzinfo=PREFERRED_TIME_ZONE)
+START_DATE = datetime(2026, 4, 1, tzinfo=PREFERRED_TIME_ZONE)
 start_date_text = START_DATE.strftime("%Y-%m-%d")
 
 ###### MOST RECENT DATE
-END_DATE = datetime(2026, 3, 8, tzinfo=PREFERRED_TIME_ZONE)
-# END_DATE = datetime.now(PREFERRED_TIME_ZONE)
-end_date_text = END_DATE.strftime("%Y-%m-%d")
+# END_DATE = datetime(2026, 3, 8, tzinfo=PREFERRED_TIME_ZONE)
+# # END_DATE = datetime.now(PREFERRED_TIME_ZONE)
+# end_date_text = END_DATE.strftime("%Y-%m-%d")
 
 
 # %%
@@ -28,16 +27,13 @@ def main(p):
     queries = txt_to_list()
     for query in queries:
         search_query = f"{query} since:{start_date_text}"
-        # \ until:{end_date_text}"
         page = search(page, search_query)
 
         random_long_wait()
-        # scrape will write tweets immediately for `query`
 
         scrape(page)
         print(f"Done scraping query: {query}")
 
-        # brief rest between queries
         random_long_wait()
 
 
@@ -84,11 +80,9 @@ def scrape(
         if page.locator("h2.timeline-end").count():
             print("NO MORE TWEETS, BREAKING NOW")
             break
-        read_tweet_content(page, content_list)
-        random_short_wait()
+        tweet_content = read_tweet_content(page, content_list)
+        write_to_csv(tweet_content)
         page = scroll_and_click(page)
-        random_long_wait()
-        random_long_wait()
         random_long_wait()
 
     return content_list
@@ -98,7 +92,6 @@ def read_tweet_content(page, content_list):
     """Read all tweets within page."""
     timeline_items = page.locator(".timeline-item")
 
-    # wait
     timeline_items.first.wait_for(state="attached")
 
     results = []
@@ -145,49 +138,19 @@ def scroll_and_click(page):
     return page
 
 
-def write_single_tweet_to_csv(tweet_data, query, file_name):
+def write_to_csv(tweets, filename="tweets_raw"):
     """
-    Append a single tweet row to CSV.
-    Writes the header if file does not exist or is empty.
-    Serializes tweet_analytics to JSON to keep CSV safe.
+    write (tweet_content, date) tuples to a csv file.
     """
-    folder_path = "../../data/raw"
-    file_path = os.path.join(folder_path, file_name)
+    file_exists = os.path.isfile(f"../data/{filename}")
 
-    # ensure parent folder exists first
-    os.makedirs(folder_path, exist_ok=True)
+    with open(filename, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
 
-    # now check if file has content (not just existence)
-    file_has_content = os.path.isfile(file_path) and os.path.getsize(file_path) > 0
+        if not file_exists:
+            writer.writerow(["tweet_content", "date"])
 
-    tweet_text, tweet_analytics, tweet_datetime = tweet_data
-
-    # sanitize text
-    cleaned_tweet_text = tweet_text.replace("\r", " ").replace("\n", " ").strip()
-
-    # turn analytics into a JSON string to store as a single CSV cell
-    try:
-        tweet_analytics_json = json.dumps(tweet_analytics, ensure_ascii=False)
-    except Exception:
-        tweet_analytics_json = str(tweet_analytics)
-
-    # format datetime
-    try:
-        formatted_date = tweet_datetime.strftime("%Y-%m-%d %H:%M:%S %z")
-    except Exception:
-        formatted_date = str(tweet_datetime)
-
-    # write row
-    with open(file_path, mode="a", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-
-        if not file_has_content:
-            # write header exactly once (if file is new or empty)
-            writer.writerow(["tweet_text", "tweet_analytics", "date", "query"])
-
-        writer.writerow(
-            [cleaned_tweet_text, tweet_analytics_json, formatted_date, query]
-        )
+        writer.writerows(tweets)
 
 
 if __name__ == "__main__":
