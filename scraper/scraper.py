@@ -11,12 +11,13 @@ from utilities import random_long_wait, random_short_wait
 # %%
 PREFERRED_TIME_ZONE = ZoneInfo("America/Chicago")
 
-###### EARLIER DATE
-START_DATE = datetime(2026, 2, 7, tzinfo=PREFERRED_TIME_ZONE)
+###### LESS RECENT DATE
+START_DATE = datetime(2026, 2, 8, tzinfo=PREFERRED_TIME_ZONE)
 start_date_text = START_DATE.strftime("%Y-%m-%d")
 
-###### LATER DATE
+###### MOST RECENT DATE
 END_DATE = datetime(2026, 3, 8, tzinfo=PREFERRED_TIME_ZONE)
+# END_DATE = datetime.now(PREFERRED_TIME_ZONE)
 end_date_text = END_DATE.strftime("%Y-%m-%d")
 
 
@@ -26,7 +27,8 @@ def main(p):
 
     queries = txt_to_list()
     for query in queries:
-        search_query = f"{query} since:{start_date_text} until:{end_date_text}"
+        search_query = f"{query} since:{start_date_text}"
+        # \ until:{end_date_text}"
         page = search(page, search_query)
 
         random_long_wait()
@@ -72,7 +74,10 @@ def search(page, query):
     return page
 
 
-def scrape(page):
+def scrape(
+    page,
+    file_name: str = "tweets_raw.csv",
+):
     content_list = []
 
     while True:
@@ -82,22 +87,43 @@ def scrape(page):
         read_tweet_content(page, content_list)
         random_short_wait()
         page = scroll_and_click(page)
+        random_long_wait()
+        random_long_wait()
+        random_long_wait()
 
     return content_list
 
 
 def read_tweet_content(page, content_list):
-    """read all tweets within page"""
+    """Read all tweets within page."""
+    timeline_items = page.locator(".timeline-item")
 
-    items = page.locator(".timeline-item").all()
+    # wait
+    timeline_items.first.wait_for(state="attached")
 
     results = []
-    for item in items:
-        text = item.locator(".tweet-content.media-body").inner_text()
+    count = timeline_items.count()
 
-        date = item.locator(".tweet-date a").get_attribute("title")
+    for i in range(count):
+        item = timeline_items.nth(i)
+
+        text_locator = item.locator(".tweet-content.media-body")
+        date_locator = item.locator(".tweet-date a")
+
+        # skip items that arent tweets
+        if text_locator.count() == 0 or date_locator.count() == 0:
+            continue
+
+        text = text_locator.first.text_content()
+        date_str = date_locator.first.get_attribute("title")
+
+        if not text or not date_str:
+            continue
+
+        text = text.strip()
+
         date = (
-            datetime.strptime(date, "%b %d, %Y · %I:%M %p UTC")
+            datetime.strptime(date_str.strip(), "%b %d, %Y · %I:%M %p UTC")
             .replace(tzinfo=timezone.utc)
             .astimezone(PREFERRED_TIME_ZONE)
         )
@@ -109,8 +135,13 @@ def read_tweet_content(page, content_list):
 
 
 def scroll_and_click(page):
-    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-    page.locator(".show-more a").click()
+    page.mouse.wheel(0, 5000)
+
+    load_more = page.get_by_role("link", name="Load more")
+
+    if load_more.count() > 0:
+        load_more.first.click()
+
     return page
 
 
