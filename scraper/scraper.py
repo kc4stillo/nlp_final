@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from playwright.sync_api import sync_playwright
-from utilities import random_long_wait
+from utilities import random_long_wait, random_short_wait
 
 # %%
 PREFERRED_TIME_ZONE = ZoneInfo("America/Chicago")
@@ -22,15 +22,17 @@ start_date_text = START_DATE.strftime("%Y-%m-%d")
 # %%
 def main(p):
     page = open_page(p)
-
     queries = txt_to_list()
+
     for query in queries:
         search_query = f"{query} since:{start_date_text}"
+
         page = search(page, search_query)
 
         random_long_wait()
 
-        scrape(page)
+        scrape(page, search_query)
+
         print(f"Done scraping query: {query}")
 
         random_long_wait()
@@ -58,7 +60,7 @@ def open_page(p):
 
     page.goto("http://localhost:8080/")
 
-    return browser, context, page
+    return page
 
 
 def search(page, query):
@@ -69,31 +71,29 @@ def search(page, query):
     return page
 
 
-def scrape(page):
-    content_list = []
-
+def scrape(page, query):
     while True:
+        random_short_wait()
+
         if page.locator("h2.timeline-end").count():
             print("NO MORE TWEETS, BREAKING NOW")
             break
-        tweet_content = read_tweet_content(page, content_list)
-        write_to_csv(tweet_content)
 
-        print(f"appended {len(tweet_content)} to csv")
-
+        content = read_tweet_content(page)
+        write_to_csv(content, query, "live_demo")
+        print(f"appended {len(content)} to csv")
+        random_short_wait()
         page = scroll_and_click(page)
 
         random_long_wait()
 
-    return content_list
 
-
-def read_tweet_content(page, content_list):
+def read_tweet_content(page):
     """read all tweets within page"""
     timeline_items = page.locator(".timeline-item")
     timeline_items.first.wait_for(state="attached")
 
-    results = []
+    content = []
     count = timeline_items.count()
 
     for i in range(count):
@@ -107,10 +107,9 @@ def read_tweet_content(page, content_list):
             continue
 
         tweet_data = (text, date, stats)
-        results.append(tweet_data)
-        content_list.append(tweet_data)
+        content.append(tweet_data)
 
-    return results
+    return content
 
 
 def grab_tweet_content(item):
@@ -186,12 +185,12 @@ def scroll_and_click(page):
     return page
 
 
-def write_to_csv(tweets, filename="tweets_raw"):
+def write_to_csv(tweets, query, filename="tweets_raw"):
     """
-    write (tweet_content, date, stats) tuples to a csv file.
+    write (tweet, date, stats) tuples to a csv file.
     """
     filepath = f"../data/{filename}.csv"
-    expected_header = ["tweet_content", "date", "stats"]
+    expected_header = ["tweet", "date", "stats", "query"]
 
     with open(filepath, "r", newline="", encoding="utf-8") as f:
         first_row = next(csv.reader(f), None)
@@ -202,7 +201,8 @@ def write_to_csv(tweets, filename="tweets_raw"):
         if first_row != expected_header:
             writer.writerow(expected_header)
 
-        writer.writerows(tweets)
+        rows = [(tweet, date, stats, query) for tweet, date, stats in tweets]
+        writer.writerows(rows)
 
 
 if __name__ == "__main__":
