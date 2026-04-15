@@ -1,6 +1,5 @@
 # %%
 import csv
-import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -22,7 +21,7 @@ start_date_text = START_DATE.strftime("%Y-%m-%d")
 
 # %%
 def main(p):
-    browser, context, page = open_page(p)
+    page = open_page(p)
 
     queries = txt_to_list()
     for query in queries:
@@ -38,7 +37,7 @@ def main(p):
 
 
 def txt_to_list():
-    """read queries from file (one per non-empty line)"""
+    """read queries from file"""
     file_path = "../ref/queries.txt"
 
     queries = []
@@ -70,10 +69,7 @@ def search(page, query):
     return page
 
 
-def scrape(
-    page,
-    file_name: str = "tweets_raw.csv",
-):
+def scrape(page):
     content_list = []
 
     while True:
@@ -82,16 +78,19 @@ def scrape(
             break
         tweet_content = read_tweet_content(page, content_list)
         write_to_csv(tweet_content)
+
+        print(f"appended {len(tweet_content)} to csv")
+
         page = scroll_and_click(page)
+
         random_long_wait()
 
     return content_list
 
 
 def read_tweet_content(page, content_list):
-    """Read all tweets within page."""
+    """read all tweets within page"""
     timeline_items = page.locator(".timeline-item")
-
     timeline_items.first.wait_for(state="attached")
 
     results = []
@@ -100,31 +99,80 @@ def read_tweet_content(page, content_list):
     for i in range(count):
         item = timeline_items.nth(i)
 
-        text_locator = item.locator(".tweet-content.media-body")
-        date_locator = item.locator(".tweet-date a")
+        text = grab_tweet_content(item)
+        date = grab_tweet_date(item)
+        stats = grab_tweet_stats(item)
 
-        # skip items that arent tweets
-        if text_locator.count() == 0 or date_locator.count() == 0:
+        if text is None or date is None:
             continue
 
-        text = text_locator.first.text_content()
-        date_str = date_locator.first.get_attribute("title")
+        tweet_data = (text, date, stats)
+        results.append(tweet_data)
+        content_list.append(tweet_data)
 
-        if not text or not date_str:
-            continue
+    return results
+
+
+def grab_tweet_content(item):
+    text_locator = item.locator(".tweet-content.media-body")
+
+    if text_locator.count() == 0:
+        return None
+
+    text = text_locator.first.text_content()
+
+    if not text:
+        return None
+
+    return " ".join(text.split())
+
+
+def grab_tweet_date(item):
+    date_locator = item.locator(".tweet-date a")
+
+    if date_locator.count() == 0:
+        return None
+
+    date_str = date_locator.first.get_attribute("title")
+
+    if not date_str:
+        return None
+
+    return (
+        datetime.strptime(date_str.strip(), "%b %d, %Y · %I:%M %p UTC")
+        .replace(tzinfo=timezone.utc)
+        .astimezone(PREFERRED_TIME_ZONE)
+    )
+
+
+def grab_tweet_stats(item):
+    def get_stat_value(icon_class):
+        stat = item.locator(f".tweet-stat:has(.{icon_class})")
+
+        if stat.count() == 0:
+            return 0
+
+        text = stat.first.text_content()
+        if not text:
+            return 0
 
         text = text.strip()
 
-        date = (
-            datetime.strptime(date_str.strip(), "%b %d, %Y · %I:%M %p UTC")
-            .replace(tzinfo=timezone.utc)
-            .astimezone(PREFERRED_TIME_ZONE)
-        )
+        # remove the icon label and normalize
+        parts = text.split()
+        for part in reversed(parts):
+            cleaned = part.replace(",", "")
+            if cleaned.isdigit():
+                return int(cleaned)
 
-        results.append((text, date))
-        content_list.append((text, date))
+        return 0
 
-    return results
+    return (
+        get_stat_value("icon-views"),
+        get_stat_value("icon-heart"),
+        get_stat_value("icon-comment"),
+        get_stat_value("icon-retweet"),
+    )
 
 
 def scroll_and_click(page):
@@ -140,15 +188,19 @@ def scroll_and_click(page):
 
 def write_to_csv(tweets, filename="tweets_raw"):
     """
-    write (tweet_content, date) tuples to a csv file.
+    write (tweet_content, date, stats) tuples to a csv file.
     """
-    file_exists = os.path.isfile(f"../data/{filename}")
+    filepath = f"../data/{filename}.csv"
+    expected_header = ["tweet_content", "date", "stats"]
 
-    with open(filename, "a", newline="", encoding="utf-8") as f:
+    with open(filepath, "r", newline="", encoding="utf-8") as f:
+        first_row = next(csv.reader(f), None)
+
+    with open(filepath, "a", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
 
-        if not file_exists:
-            writer.writerow(["tweet_content", "date"])
+        if first_row != expected_header:
+            writer.writerow(expected_header)
 
         writer.writerows(tweets)
 
