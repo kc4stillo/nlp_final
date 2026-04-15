@@ -80,7 +80,7 @@ def scrape(page, query):
             break
 
         content = read_tweet_content(page)
-        write_to_csv(content, query, "live_demo")
+        write_to_csv(content, query)
         print(f"appended {len(content)} to csv")
         random_short_wait()
         page = scroll_and_click(page)
