@@ -2,7 +2,7 @@
 import csv
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from playwright.sync_api import sync_playwright
@@ -24,33 +24,19 @@ end_date_text = END_DATE.strftime("%Y-%m-%d")
 def main(p):
     browser, context, page = open_page(p)
 
-    try:
-        queries = txt_to_list()
-        for query in queries:
-            search_query = f"{query} since:{start_date_text} until:{end_date_text}"
+    queries = txt_to_list()
+    for query in queries:
+        search_query = f"{query} since:{start_date_text} until:{end_date_text}"
+        page = search(page, search_query)
 
-            random_short_wait()
+        random_long_wait()
+        # scrape will write tweets immediately for `query`
 
-            page = search(page, search_query)
+        scrape(page)
+        print(f"Done scraping query: {query}")
 
-            random_short_wait()
-
-            # scrape will write tweets immediately for `query`
-            print(scrape(page, START_DATE, END_DATE, PREFERRED_TIME_ZONE, query))
-
-            print(f"Done scraping query: {query}")
-
-            # brief rest between queries
-            random_long_wait()
-    finally:
-        # ensure browser closes even if something errors
-        try:
-            context.close()
-            browser.close()
-        except Exception:
-            pass
-
-    print("DONE!")
+        # brief rest between queries
+        random_long_wait()
 
 
 def txt_to_list():
@@ -86,80 +72,21 @@ def search(page, query):
     return page
 
 
-def scrape(
-    page,
-    start_date,
-    end_date,
-    time_zone,
-    query,
-    file_name: str = "tweets_raw.csv",
-):
+def scrape(page):
     content_list = []
-    i = 1
 
-    failed_reads = 0  # for tweet_time is None
-    consecutive_duplicates = 0  # for duplicate/stall scrolling
-
-    # while True:
-    return read_tweet_content(page, content_list, time_zone)
-
-    # if tweet_time is None:
-    #     print("No tweet timestamp found; scrolling and retrying...")
-    #     scroll_to_next_tweet(page)
-    #     failed_reads += 1
-    #     if failed_reads >= 8:
-    #         print("Too many failed reads — aborting this query.")
-    #         break
-    #     continue
-    # else:
-    #     failed_reads = 0  # ONLY reset failed-reads here
-
-    # # stop when older than start_date
-    # if tweet_time < start_date:
-    #     if i == 1 and not content_list:
-    #         print("NO TWEETS IN THE TIME FRAME")
-    #     else:
-    #         print("Reached tweets older than start_date; stopping scrape.")
-    #     break
-
-    # # skip tweets newer than end_date
-    # if tweet_time > end_date:
-    #     print("Found tweet newer than end_date — skipping and scrolling.")
-    #     scroll_to_next_tweet(page)
-    #     continue
-
-    # if new_tweet_appended and tweet_data is not None:
-    #     consecutive_duplicates = 0  # reset ONLY when we got a new tweet
-
-    #     print("------------------------------------------")
-    #     print("TWEET #", i)
-    #     print("APPENDED TWEET FROM TIME", tweet_time)
-    #     print("CURRENT TWEET CONTENT:", content_list[-1][0][:140])  # preview
-
-    #     try:
-    #         write_single_tweet_to_csv(tweet_data, query, file_name)
-    #     except Exception as e:
-    #         print("Error writing tweet to CSV:", e)
-
-    #     i += 1
-    #     scroll_to_next_tweet(page)
-    # else:
-    #     # duplicate / stall
-    #     consecutive_duplicates += 1
-    #     print("SCROLLING, TWEET WAS DUPLICATE OR ALREADY COLLECTED")
-
-    #     if consecutive_duplicates >= 30:
-    #         print(
-    #             "No new tweets after 30 duplicate/stall scrolls — stopping this query."
-    #         )
-    #         break
-
-    #     scroll_to_next_tweet(page)
+    while True:
+        if page.locator("h2.timeline-end").count():
+            print("NO MORE TWEETS, BREAKING NOW")
+            break
+        read_tweet_content(page, content_list)
+        random_short_wait()
+        page = scroll_and_click(page)
 
     return content_list
 
 
-def read_tweet_content(page, content_list, time_zone):
+def read_tweet_content(page, content_list):
     """read all tweets within page"""
 
     items = page.locator(".timeline-item").all()
@@ -167,7 +94,13 @@ def read_tweet_content(page, content_list, time_zone):
     results = []
     for item in items:
         text = item.locator(".tweet-content.media-body").inner_text()
+
         date = item.locator(".tweet-date a").get_attribute("title")
+        date = (
+            datetime.strptime(date, "%b %d, %Y · %I:%M %p UTC")
+            .replace(tzinfo=timezone.utc)
+            .astimezone(PREFERRED_TIME_ZONE)
+        )
 
         results.append((text, date))
         content_list.append((text, date))
@@ -175,18 +108,10 @@ def read_tweet_content(page, content_list, time_zone):
     return results
 
 
-def scroll_to_next_tweet(page):
-    tweet_locator = page.locator('article[data-testid="tweet"]').first
-    try:
-        height = tweet_locator.evaluate("element => element.offsetHeight")
-        if not isinstance(height, (int, float)) or height <= 0:
-            height = 800
-    except Exception:
-        height = 800
-
-    print("SCROLLING:", height, "PIXELS")
-    page.mouse.wheel(0, height)
-    random_short_wait()
+def scroll_and_click(page):
+    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    page.locator(".show-more a").click()
+    return page
 
 
 def write_single_tweet_to_csv(tweet_data, query, file_name):
