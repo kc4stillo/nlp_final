@@ -2,13 +2,12 @@
 import csv
 import json
 import os
-import random
-import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from html_parser import extract_analytics, extract_time, extract_tweet_text
 from playwright.sync_api import TimeoutError, sync_playwright
+from utilities import random_short_wait
 
 # %%
 PREFERRED_TIME_ZONE = ZoneInfo("America/Chicago")
@@ -49,24 +48,17 @@ def main(p):
     print("DONE!")
 
 
-def random_short_wait(min_seconds: int = 1, max_seconds: int = 2):
-    """sleep a random short interval"""
-    time.sleep(random.randint(min_seconds, max_seconds))
-
-
 def txt_to_list():
     """read queries from file (one per non-empty line)"""
     file_path = "../ref/queries.txt"
 
-    if not os.path.isfile(file_path):
-        raise FileNotFoundError(f"Queries file not found at: {file_path}")
-
     queries = []
+
     with open(file_path, "r", encoding="utf-8") as f:
         for line in f:
             stripped_line = line.strip()
-            if stripped_line:
-                queries.append(stripped_line)
+            queries.append(stripped_line)
+
     return queries
 
 
@@ -75,30 +67,17 @@ def open_page(p):
 
     context = browser.new_context()
     page = context.new_page()
+
     page.goto("http://localhost:8080/")
 
     return browser, context, page
 
 
-# what??
 def search(page, query):
-    random_short_wait()
-    try:
-        search_input = page.locator('input[aria-label="Search query"]')
-        search_input.click()
-        random_short_wait()
-        search_input.fill(query)
-        random_short_wait()
-        search_input.press("Enter")
-        random_short_wait()
-        # click 'Latest' to get newest tweets (adjust if localized)
-        try:
-            page.locator('text="Latest"').click()
-        except Exception:
-            # fallback: continue without clicking if selector fails
-            print("Couldn't click 'Latest' — continuing with default search order.")
-    except Exception as e:
-        print("Search failed:", e)
+    page.locator('input[name="q"]').click()
+    page.locator('input[name="q"]').fill(query)
+    page.keyboard.press("Enter")
+
     return page
 
 
