@@ -189,7 +189,7 @@ def write_to_csv(tweets, query, filename="tweets_raw"):
     """
     write (tweet, date, stats) tuples to a csv file.
     """
-    filepath = f"../data/{filename}.csv"
+    filepath = f"../data/raw/{filename}.csv"
     expected_header = ["tweet", "date", "stats", "query"]
 
     with open(filepath, "r", newline="", encoding="utf-8") as f:
