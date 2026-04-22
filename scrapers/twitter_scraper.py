@@ -10,7 +10,7 @@ from utilities import random_long_wait, random_short_wait
 PREFERRED_TIME_ZONE = ZoneInfo("America/Chicago")
 
 ###### LESS RECENT DATE
-START_DATE = datetime(2026, 4, 1, tzinfo=PREFERRED_TIME_ZONE)
+START_DATE = datetime(2026, 2, 1, tzinfo=PREFERRED_TIME_ZONE)
 start_date_text = START_DATE.strftime("%Y-%m-%d")
 
 ###### MOST RECENT DATE
