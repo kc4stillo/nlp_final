@@ -2,8 +2,8 @@ import os
 import pandas as pd
 from transformers import pipeline
 
-INPUT_FILE = "data/cleaned/tweets_clean.csv"
-OUTPUT_FILE = "betterhelp_tweets_sentiment.csv"
+INPUT_FILE = "/Users/riyalouis/Documents/GitHub/nlp_final/data/cleaned/tweets_clean.csv"
+OUTPUT_FILE = "all_tweets_sentiment.csv"
 
 analyzer = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
 
