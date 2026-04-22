@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from playwright.sync_api import sync_playwright
-from utilities import random_long_wait, random_short_wait
+from utilities import random_long_wait
 
 # %%
 PREFERRED_TIME_ZONE = ZoneInfo("America/Chicago")
@@ -73,7 +73,7 @@ def search(page, query):
 
 def scrape(page, query):
     while True:
-        random_short_wait()
+        random_long_wait()
 
         if page.locator("h2.timeline-end").count():
             print("NO MORE TWEETS, BREAKING NOW")
@@ -82,10 +82,10 @@ def scrape(page, query):
         content = read_tweet_content(page)
         write_to_csv(content, query)
         print(f"appended {len(content)} to csv")
-        random_short_wait()
-        page = scroll_and_click(page)
 
         random_long_wait()
+
+        page = scroll_and_click(page)
 
 
 def read_tweet_content(page):
