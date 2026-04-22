@@ -2,7 +2,10 @@ import html
 import re
 from pathlib import Path
 
+import nltk
 import pandas as pd
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
 
 # Set this to either:
 # - a single .txt file
@@ -15,22 +18,47 @@ OUTPUT_FILE = "../data/cleaned/reddit_clean.csv"
 DEDUP_WITHIN_TOPIC = True
 
 # -------------------------------------------------------------------
+# NLTK SETUP
+# -------------------------------------------------------------------
+nltk.download("stopwords")
+nltk.download("wordnet")
+nltk.download("omw-1.4")
+
+STOP_WORDS = set(stopwords.words("english"))
+LEMMATIZER = WordNetLemmatizer()
+
+# extra social-media / reddit filler words
+EXTRA_STOPWORDS = {
+    "im",
+    "ive",
+    "id",
+    "youre",
+    "youve",
+    "theyre",
+    "thats",
+    "theres",
+    "cant",
+    "couldnt",
+    "didnt",
+    "doesnt",
+    "dont",
+    "isnt",
+    "wasnt",
+    "werent",
+    "wont",
+    "wouldnt",
+    "amp",
+    "lol",
+    "yeah",
+    "reddit",
+    "deleted",
+    "removed",
+}
+STOP_WORDS = STOP_WORDS.union(EXTRA_STOPWORDS)
+
+# -------------------------------------------------------------------
 # CUSTOM TOPIC RULES
 # -------------------------------------------------------------------
-# How to use:
-# - key: normalized topic name you want to target
-# - aliases: alternative names for that topic/product
-# - include_any: comment must contain at least one of these
-# - include_all: comment must contain all of these
-# - exclude_any: comment must NOT contain any of these
-# - min_score: minimum reddit score required
-#
-# If a topic has no custom rule, the script falls back to the old behavior:
-# keep comments that contain meaningful words from the topic.
-#
-# Example:
-# "ag1 powder" will keep comments mentioning ag1 / athletic greens,
-# but drop comments that are just about Huberman / NYT article discourse.
 TOPIC_RULES = {
     "ag1 powder": {
         "aliases": ["ag1", "athletic greens", "greens powder"],
@@ -72,7 +100,7 @@ COMMENT_HEADER_RE = re.compile(r"^\s*\[\d+\]\s+u/([^\s]+)\s+\(score:\s*(-?\d+)\)
 
 def clean_reddit(text):
     """
-    Clean reddit comment text similar to Twitter cleaning:
+    Clean reddit comment text:
     - lowercase
     - remove URLs
     - remove user mentions
@@ -86,12 +114,12 @@ def clean_reddit(text):
     text = html.unescape(str(text))
     text = text.replace("\u200b", " ")
     text = text.lower()
-    text = re.sub(r"https?://\S+|www\.\S+", "", text)  # remove URLs
-    text = re.sub(r"u\/\w+", "", text)  # remove reddit user mentions
-    text = re.sub(r"@\w+", "", text)  # remove @mentions just in case
+    text = re.sub(r"https?://\S+|www\.\S+", " ", text)  # remove URLs
+    text = re.sub(r"u\/\w+", " ", text)  # remove reddit user mentions
+    text = re.sub(r"@\w+", " ", text)  # remove @mentions
     text = re.sub(r"#", "", text)  # remove hashtag symbol only
-    text = re.sub(r"[^\w\s]", "", text)  # remove punctuation/special chars
-    text = " ".join(text.split())  # remove extra spaces
+    text = re.sub(r"[^\w\s]", " ", text)  # remove punctuation/special chars
+    text = re.sub(r"\s+", " ", text).strip()  # remove extra spaces
     return text
 
 
@@ -158,9 +186,6 @@ def default_topic_match(comment, topic):
     """
     Fallback behavior:
     keep row only if the cleaned comment includes a meaningful topic word.
-    Example:
-      topic = 'AG1 Powder'
-      comment contains 'ag1' -> keep
     """
     comment_clean = clean_reddit(comment)
     topic_clean = clean_reddit(topic)
@@ -170,7 +195,6 @@ def default_topic_match(comment, topic):
 
     topic_words = topic_clean.split()
 
-    # Keep meaningful words only
     topic_words = [
         word
         for word in topic_words
@@ -206,24 +230,75 @@ def should_keep_topic_comment(comment, topic, score):
     exclude_any = normalize_terms(rule.get("exclude_any", []))
     min_score = rule.get("min_score", None)
 
-    # Optional score threshold
     if min_score is not None and score < min_score:
         return False
 
-    # Exclude unwanted comments first
     if exclude_any and contains_any(comment_clean, exclude_any):
         return False
 
-    # Require all phrases if specified
     if include_all and not contains_all(comment_clean, include_all):
         return False
 
-    # Require at least one include phrase / alias if specified
     required_any = include_any + aliases
     if required_any and not contains_any(comment_clean, required_any):
         return False
 
     return True
+
+
+def build_topic_stopwords(topic_value):
+    """
+    Build a set of topic words to remove from the final LDA text.
+    Example:
+        'betterhelp' -> {'betterhelp'}
+        'magic spoon' -> {'magic', 'spoon'}
+    """
+    if not isinstance(topic_value, str):
+        return set()
+
+    tokens = re.findall(r"\b[a-z0-9]+\b", topic_value.lower())
+    return set(tokens)
+
+
+def preprocess_for_lda(text, topic_value):
+    """
+    Create an LDA-ready version of reddit text:
+    - tokenize
+    - remove stopwords
+    - remove topic words
+    - remove numbers / mixed junk
+    - remove short tokens
+    - lemmatize
+    """
+    if not isinstance(text, str) or not text.strip():
+        return ""
+
+    topic_words = build_topic_stopwords(topic_value)
+
+    # alphabetic tokens only for cleaner LDA vocabulary
+    tokens = re.findall(r"\b[a-z]+\b", text.lower())
+
+    processed_tokens = []
+    for token in tokens:
+        if token in STOP_WORDS:
+            continue
+        if token in topic_words:
+            continue
+        if len(token) < 3:
+            continue
+
+        lemma = LEMMATIZER.lemmatize(token)
+
+        if lemma in STOP_WORDS:
+            continue
+        if lemma in topic_words:
+            continue
+        if len(lemma) < 3:
+            continue
+
+        processed_tokens.append(lemma)
+
+    return " ".join(processed_tokens)
 
 
 def extract_comments_from_text(text, fallback_topic="unknown"):
@@ -326,7 +401,7 @@ def clean_reddit_export(input_path, output_file):
 
     df = pd.DataFrame(all_rows, columns=["reddit", "topic", "score"])
 
-    # Clean reddit comments
+    # Clean reddit comments and topic
     df["reddit"] = df["reddit"].apply(clean_reddit)
     df["topic"] = df["topic"].apply(clean_reddit)
 
@@ -350,8 +425,17 @@ def clean_reddit_export(input_path, output_file):
     else:
         df = df.drop_duplicates(subset=["reddit"], keep="first")
 
+    # Build LDA-ready text
+    df["lda"] = df.apply(
+        lambda row: preprocess_for_lda(row["reddit"], row["topic"]),
+        axis=1,
+    )
+
+    # Remove rows that become empty after LDA preprocessing
+    df = df[df["lda"].str.strip() != ""]
+
     # Reorder columns
-    df = df[["reddit", "topic", "score"]].reset_index(drop=True)
+    df = df[["reddit", "lda", "topic", "score"]].reset_index(drop=True)
 
     # Save output
     Path(output_file).parent.mkdir(parents=True, exist_ok=True)
