@@ -2,10 +2,10 @@ import os
 import pandas as pd
 from transformers import pipeline
 
-INPUT_FILE = "/Users/riyalouis/Documents/GitHub/nlp_final/data/cleaned/tweets_clean.csv"
-OUTPUT_FILE = "all_tweets_sentiment.csv"
+INPUT_FILE = "/Users/riyalouis/Documents/GitHub/nlp_final/data/cleaned/sponsored_transcripts.csv"
+OUTPUT_FILE = "/Users/riyalouis/Documents/GitHub/nlp_final/sentiment_analysis/v2/2sponsoredyt_sentiment.csv"
 
-analyzer = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
+analyzer = pipeline("sentiment-analysis", model="cardiffnlp/twitter-roberta-base-sentiment-latest")
 
 def main():
     df = load_data(INPUT_FILE)
@@ -29,7 +29,7 @@ def score_text(text):
     return result["label"], result["score"]
 
 def analyze_sentiment(df):
-    results = df["tweet"].apply(lambda text: pd.Series(score_text(text)))
+    results = df["Transcript"].apply(lambda text: pd.Series(score_text(text)))
     results.columns = ["sentiment", "confidence"]
 
     df = pd.concat([df, results], axis=1)
